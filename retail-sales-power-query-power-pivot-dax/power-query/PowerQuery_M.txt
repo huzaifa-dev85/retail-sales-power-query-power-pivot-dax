@@ -1,0 +1,103 @@
+Power Query (M) scripts ? Data ? Get Data ? Launch Power Query Editor ? Home ? Advanced Editor ? paste		
+"Create a text Parameter pFolder first (e.g. C:\Data\Retail\ ? keep the trailing backslash). Load every query as ?Only Create Connection + Add to Data Model?, except DQ_Summary (table in worksheet)."		
+		
+Ý pFolder  ?  Parameter (Manage Parameters ? New ? Type: Text)		
+pFolder	1	"""C:\Data\Retail\"" meta [IsParameterQuery=true, Type=""Text"", IsParameterQueryRequired=true]"
+		
+"Ý Dim_Date  ?  Fix typing, drop empty WeekOfYear, rebuild week, add DayType"		
+Dim_Date	1	let
+Dim_Date	2	"    Source = Csv.Document(File.Contents(pFolder & ""Date.csv""), [Delimiter="","", Columns=14, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),"
+Dim_Date	3	"    Promoted = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),"
+Dim_Date	4	"    Typed = Table.TransformColumnTypes(Promoted, {{""DateKey"", Int64.Type}, {""Date"", type date}, {""Year"", Int64.Type}, {""Quarter"", type text}, {""MonthNumber"", Int64.Type}, {""MonthName"", type text}, {""YearMonth"", type text}, {""DayOfWeekNumber"", Int64.Type}, {""DayName"", type text}, {""IsWeekend"", Int64.Type}, {""FiscalYear"", Int64.Type}, {""FiscalMonthNumber"", Int64.Type}, {""FiscalQuarter"", type text}}, ""en-US""),"
+Dim_Date	5	"    DropEmpty = Table.RemoveColumns(Typed, {""WeekOfYear""}),   // source column is 100% null"
+Dim_Date	6	"    AddWeek = Table.AddColumn(DropEmpty, ""WeekOfYear"", each Date.WeekOfYear([Date], Day.Monday), Int64.Type),"
+Dim_Date	7	"    AddDayType = Table.AddColumn(AddWeek, ""DayType"", each if [IsWeekend] = 1 then ""Weekend"" else ""Weekday"", type text),"
+Dim_Date	8	"    AddMonthLabel = Table.AddColumn(AddDayType, ""MonthLabel"", each [MonthName] & "" "" & Text.From([Year]), type text)"
+Dim_Date	9	in
+Dim_Date	10	    AddMonthLabel
+		
+Ý Dim_Date (alt)  ?  OPTIONAL ? generate the calendar yourself instead of loading Date.csv (shows M skills)		
+Dim_Date (alt)	1	let
+Dim_Date (alt)	2	"    StartDate = #date(2025, 1, 1),"
+Dim_Date (alt)	3	"    EndDate   = #date(2025, 12, 31),"
+Dim_Date (alt)	4	"    Dates  = List.Dates(StartDate, Duration.Days(EndDate - StartDate) + 1, #duration(1, 0, 0, 0)),"
+Dim_Date (alt)	5	"    ToTbl  = Table.FromList(Dates, Splitter.SplitByNothing(), {""Date""}, null, ExtraValues.Error),"
+Dim_Date (alt)	6	"    Typed  = Table.TransformColumnTypes(ToTbl, {{""Date"", type date}}),"
+Dim_Date (alt)	7	"    Key    = Table.AddColumn(Typed, ""DateKey"", each Date.Year([Date]) * 10000 + Date.Month([Date]) * 100 + Date.Day([Date]), Int64.Type),"
+Dim_Date (alt)	8	"    Yr     = Table.AddColumn(Key, ""Year"", each Date.Year([Date]), Int64.Type),"
+Dim_Date (alt)	9	"    Mo     = Table.AddColumn(Yr, ""MonthNumber"", each Date.Month([Date]), Int64.Type),"
+Dim_Date (alt)	10	"    MoName = Table.AddColumn(Mo, ""MonthName"", each Date.ToText([Date], ""MMM"", ""en-US""), type text),"
+Dim_Date (alt)	11	"    YM     = Table.AddColumn(MoName, ""YearMonth"", each Date.ToText([Date], ""yyyy-MM""), type text),"
+Dim_Date (alt)	12	"    Qtr    = Table.AddColumn(YM, ""Quarter"", each ""Q"" & Text.From(Date.QuarterOfYear([Date])), type text),"
+Dim_Date (alt)	13	"    FY     = Table.AddColumn(Qtr, ""FiscalYear"", each if Date.Month([Date]) >= 4 then Date.Year([Date]) else Date.Year([Date]) - 1, Int64.Type),"
+Dim_Date (alt)	14	"    FM     = Table.AddColumn(FY, ""FiscalMonthNumber"", each Number.Mod(Date.Month([Date]) - 4, 12) + 1, Int64.Type),"
+Dim_Date (alt)	15	"    FQ     = Table.AddColumn(FM, ""FiscalQuarter"", each ""FQ"" & Text.From(Number.RoundUp([FiscalMonthNumber] / 3)), type text),"
+Dim_Date (alt)	16	"    Wk     = Table.AddColumn(FQ, ""IsWeekend"", each if Date.DayOfWeek([Date], Day.Monday) >= 5 then 1 else 0, Int64.Type)"
+Dim_Date (alt)	17	in
+Dim_Date (alt)	18	    Wk
+		
+"Ý Dim_Customer  ?  Type, trim, proper-case, AgeGroup, Status, Tenure"		
+Dim_Customer	1	let
+Dim_Customer	2	"    Source = Csv.Document(File.Contents(pFolder & ""Customers.csv""), [Delimiter="","", Columns=10, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),"
+Dim_Customer	3	"    Promoted = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),"
+Dim_Customer	4	"    Typed = Table.TransformColumnTypes(Promoted, {{""CustomerID"", type text}, {""CustomerName"", type text}, {""Gender"", type text}, {""Age"", Int64.Type}, {""Segment"", type text}, {""State"", type text}, {""City"", type text}, {""CustomerSince"", type date}, {""PreferredChannel"", type text}, {""IsActive"", Int64.Type}}, ""en-US""),"
+Dim_Customer	5	"    Cleaned = Table.TransformColumns(Typed, {{""CustomerName"", Text.Trim, type text}, {""City"", Text.Proper, type text}}),"
+Dim_Customer	6	"    AgeGroup = Table.AddColumn(Cleaned, ""AgeGroup"", each if [Age] < 25 then ""18-24"" else if [Age] < 35 then ""25-34"" else if [Age] < 45 then ""35-44"" else ""45+"", type text),"
+Dim_Customer	7	"    Status = Table.AddColumn(AgeGroup, ""CustomerStatus"", each if [IsActive] = 1 then ""Active"" else ""Inactive"", type text),"
+Dim_Customer	8	"    Tenure = Table.AddColumn(Status, ""TenureMonths"", each Number.RoundDown(Duration.Days(#date(2025, 12, 31) - [CustomerSince]) / 30.4375), Int64.Type)"
+Dim_Customer	9	in
+Dim_Customer	10	    Tenure
+		
+"Ý Dim_Product  ?  en-GB date parse, label, margin, price band"		
+Dim_Product	1	let
+Dim_Product	2	"    Source = Csv.Document(File.Contents(pFolder & ""Products.csv""), [Delimiter="","", Columns=9, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),"
+Dim_Product	3	"    Promoted = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),"
+Dim_Product	4	"    Typed = Table.TransformColumnTypes(Promoted, {{""ProductID"", type text}, {""ProductName"", type text}, {""Brand"", type text}, {""Category"", type text}, {""Subcategory"", type text}, {""ListPrice"", Int64.Type}, {""StandardCost"", Int64.Type}, {""IsActive"", Int64.Type}}),"
+Dim_Product	5	"    LaunchFix = Table.TransformColumnTypes(Typed, {{""LaunchDate"", type date}}, ""en-GB""),   // dd-MM-yyyy text -> date"
+Dim_Product	6	"    Label = Table.AddColumn(LaunchFix, ""ProductLabel"", each [ProductName] & "" ("" & [ProductID] & "")"", type text),   // names repeat, IDs do not"
+Dim_Product	7	"    UnitMargin = Table.AddColumn(Label, ""UnitMargin"", each [ListPrice] - [StandardCost], Int64.Type),"
+Dim_Product	8	"    MarginPct = Table.AddColumn(UnitMargin, ""MarginPct"", each [UnitMargin] / [ListPrice], Percentage.Type),"
+Dim_Product	9	"    Band = Table.AddColumn(MarginPct, ""PriceBand"", each if [ListPrice] < 500 then ""Budget"" else if [ListPrice] < 5000 then ""Mid"" else ""Premium"", type text),"
+Dim_Product	10	"    Status = Table.AddColumn(Band, ""ProductStatus"", each if [IsActive] = 1 then ""Active"" else ""Discontinued"", type text)"
+Dim_Product	11	in
+Dim_Product	12	    Status
+		
+"Ý Dim_Store  ?  Type, label, store age"		
+Dim_Store	1	let
+Dim_Store	2	"    Source = Csv.Document(File.Contents(pFolder & ""Stores.csv""), [Delimiter="","", Columns=8, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),"
+Dim_Store	3	"    Promoted = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),"
+Dim_Store	4	"    Typed = Table.TransformColumnTypes(Promoted, {{""StoreID"", type text}, {""StoreName"", type text}, {""Region"", type text}, {""State"", type text}, {""City"", type text}, {""Channel"", type text}, {""OpenDate"", type date}, {""StoreType"", type text}}, ""en-US""),"
+Dim_Store	5	"    Label = Table.AddColumn(Typed, ""StoreLabel"", each [StoreName] & "" ("" & [StoreID] & "")"", type text),"
+Dim_Store	6	"    Age = Table.AddColumn(Label, ""StoreAgeYears"", each Number.Round(Duration.Days(#date(2025, 12, 31) - [OpenDate]) / 365.25, 1), type number)"
+Dim_Store	7	in
+Dim_Store	8	    Age
+		
+"Ý Sales_Fact  ?  Type, dedupe on OrderID, real OrderDate, OrderStatus ? fact table"		
+Sales_Fact	1	let
+Sales_Fact	2	"    Source = Csv.Document(File.Contents(pFolder & ""Sales_Fact.csv""), [Delimiter="","", Columns=17, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),"
+Sales_Fact	3	"    Promoted = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),"
+Sales_Fact	4	"    Typed = Table.TransformColumnTypes(Promoted, {{""OrderID"", type text}, {""OrderDateKey"", Int64.Type}, {""CustomerID"", type text}, {""ProductID"", type text}, {""StoreID"", type text}, {""Quantity"", Int64.Type}, {""UnitPrice"", Int64.Type}, {""DiscountPct"", type number}, {""GrossSales"", Int64.Type}, {""NetRevenue"", Int64.Type}, {""COGS"", Int64.Type}, {""Profit"", Int64.Type}, {""PaymentMethod"", type text}, {""PromoCode"", type text}, {""ShipDays"", Int64.Type}, {""ShipMode"", type text}, {""ReturnedFlag"", Int64.Type}}, ""en-US""),"
+Sales_Fact	5	"    Dedup = Table.Distinct(Typed, {""OrderID""}),   // grain guard: 1 row = 1 order"
+Sales_Fact	6	"    OrderDate = Table.AddColumn(Dedup, ""OrderDate"", each Date.FromText(Text.From([OrderDateKey]), [Format = ""yyyyMMdd"", Culture = ""en-US""]), type date),"
+Sales_Fact	7	"    Status = Table.AddColumn(OrderDate, ""OrderStatus"", each if [ReturnedFlag] = 1 then ""Returned"" else ""Delivered"", type text),"
+Sales_Fact	8	"    Reorder = Table.ReorderColumns(Status, {""OrderID"", ""OrderDate"", ""OrderDateKey"", ""OrderStatus""} & List.RemoveItems(Table.ColumnNames(Status), {""OrderID"", ""OrderDate"", ""OrderDateKey"", ""OrderStatus""}))"
+Sales_Fact	9	in
+Sales_Fact	10	    Reorder
+		
+Ý DQ_Summary  ?  Data-quality checks as a table (merge + filter + #table) ? load to worksheet		
+DQ_Summary	1	let
+DQ_Summary	2	"    F = Sales_Fact,"
+DQ_Summary	3	"    J1  = Table.NestedJoin(F, {""CustomerID""}, Dim_Customer, {""CustomerID""}, ""C"", JoinKind.LeftOuter),"
+DQ_Summary	4	"    J1x = Table.ExpandTableColumn(J1, ""C"", {""CustomerSince""}),"
+DQ_Summary	5	"    J2  = Table.NestedJoin(J1x, {""ProductID""}, Dim_Product, {""ProductID""}, ""P"", JoinKind.LeftOuter),"
+DQ_Summary	6	"    J2x = Table.ExpandTableColumn(J2, ""P"", {""IsActive"", ""StandardCost""}, {""ProdActive"", ""StdCost""}),"
+DQ_Summary	7	"    Checks = #table(type table [Check = text, Rows = Int64.Type], {"
+DQ_Summary	8	"        {""Orders dated before CustomerSince"", Table.RowCount(Table.SelectRows(J2x, each [OrderDate] < [CustomerSince]))},"
+DQ_Summary	9	"        {""Sales of inactive products"",        Table.RowCount(Table.SelectRows(J2x, each [ProdActive] = 0))},"
+DQ_Summary	10	"        {""UnitPrice below standard cost"",     Table.RowCount(Table.SelectRows(J2x, each [UnitPrice] < [StdCost]))},"
+DQ_Summary	11	"        {""Returned orders with NetRevenue = 0"", Table.RowCount(Table.SelectRows(J2x, each [ReturnedFlag] = 1 and [NetRevenue] = 0))},"
+DQ_Summary	12	"        {""Orders where NetRevenue = GrossSales"", Table.RowCount(Table.SelectRows(J2x, each [NetRevenue] = [GrossSales]))},"
+DQ_Summary	13	"        {""Duplicate OrderIDs"",                Table.RowCount(F) - Table.RowCount(Table.Distinct(F, {""OrderID""}))}"
+DQ_Summary	14	    })
+DQ_Summary	15	in
+DQ_Summary	16	    Checks

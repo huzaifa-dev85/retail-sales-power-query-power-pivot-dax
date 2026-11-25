@@ -1,0 +1,134 @@
+"DAX measure pack ? 56 measures  |  model: Sales_Fact, Dim_Date, Dim_Customer, Dim_Product, Dim_Store"					
+"Create each in Power Pivot ? Measures ? New Measure (table: Sales_Fact), or in a PivotTable: right-click table ? Add Measure. Names are plain so they paste cleanly."					
+					
+#	Group	Measure name	"DAX formula (paste the part after the ?=?, or the whole line)"	Format	Why it matters
+1	1 Core KPIs	Gross Sales	"Gross Sales =
+SUM ( Sales_Fact[GrossSales] )"	"#,##0"	Quantity ? UnitPrice before returns.
+2	1 Core KPIs	Net Revenue	"Net Revenue =
+SUM ( Sales_Fact[NetRevenue] )"	"#,##0"	Revenue after returns (returned orders are 0 in source).
+3	1 Core KPIs	Total COGS	"Total COGS =
+SUM ( Sales_Fact[COGS] )"	"#,##0"	Cost of goods incl. returned orders (cost not recovered).
+4	1 Core KPIs	Total Profit	"Total Profit =
+SUM ( Sales_Fact[Profit] )"	"#,##0"	Net revenue ? COGS; negative on returned orders.
+5	1 Core KPIs	Profit Margin %	"Profit Margin % =
+DIVIDE ( [Total Profit], [Net Revenue] )"	0.0%	Always use DIVIDE ? no divide-by-zero errors in blank slicer states.
+6	1 Core KPIs	Units Sold	"Units Sold =
+SUM ( Sales_Fact[Quantity] )"	"#,##0"	Volume.
+7	1 Core KPIs	Orders	"Orders =
+COUNTROWS ( Sales_Fact )"	"#,##0"	"OrderID is unique ? grain = 1 row per order, COUNTROWS is faster than DISTINCTCOUNT."
+8	1 Core KPIs	Delivered Orders	"Delivered Orders =
+CALCULATE ( [Orders], Sales_Fact[OrderStatus] = ""Delivered"" )"	"#,##0"	OrderStatus is added in Power Query from ReturnedFlag.
+9	1 Core KPIs	Returned Orders	"Returned Orders =
+CALCULATE ( [Orders], Sales_Fact[ReturnedFlag] = 1 )"	"#,##0"	Boolean filter inside CALCULATE.
+10	1 Core KPIs	Return Rate %	"Return Rate % =
+DIVIDE ( [Returned Orders], [Orders] )"	0.00%	Quality / fulfilment KPI.
+11	1 Core KPIs	AOV	"AOV =
+DIVIDE ( [Net Revenue], [Delivered Orders] )"	"#,##0"	Average order value on kept orders.
+12	1 Core KPIs	Return Loss	"Return Loss =
+- CALCULATE ( [Total Profit], Sales_Fact[ReturnedFlag] = 1 )"	"#,##0"	Profit destroyed by returns (shown positive).
+13	2 Pricing & Promo	List Value	"List Value =
+SUMX ( Sales_Fact, Sales_Fact[Quantity] * RELATED ( Dim_Product[ListPrice] ) )"	"#,##0"	Iterator + RELATED across the relationship.
+14	2 Pricing & Promo	Price Discount	"Price Discount =
+[List Value] - [Gross Sales]"	"#,##0"	True discount = list price minus price actually charged (DiscountPct is not deducted in source).
+15	2 Pricing & Promo	Price Discount %	"Price Discount % =
+DIVIDE ( [Price Discount], [List Value] )"	0.0%	Realised discount depth.
+16	2 Pricing & Promo	Weighted Promo Discount %	"Weighted Promo Discount % =
+DIVIDE ( SUMX ( Sales_Fact, Sales_Fact[GrossSales] * Sales_Fact[DiscountPct] ), [Gross Sales] )"	0.0%	"Revenue-weighted, not a simple average ? avoids the average-of-averages trap."
+17	2 Pricing & Promo	Promo Order Share %	"Promo Order Share % =
+DIVIDE ( CALCULATE ( [Orders], Sales_Fact[PromoCode] <> ""NONE"" ), [Orders] )"	0.0%	How dependent is the business on promo codes?
+18	2 Pricing & Promo	Below-Cost Orders	"Below-Cost Orders =
+CALCULATE ( [Orders], FILTER ( Sales_Fact, Sales_Fact[ReturnedFlag] = 0 && Sales_Fact[Profit] < 0 ) )"	"#,##0"	Delivered orders that lost money (UnitPrice < cost).
+19	3 Time Intelligence	Net Revenue MTD	"Net Revenue MTD =
+TOTALMTD ( [Net Revenue], Dim_Date[Date] )"	"#,##0"	Requires Dim_Date marked as Date Table.
+20	3 Time Intelligence	Net Revenue QTD	"Net Revenue QTD =
+TOTALQTD ( [Net Revenue], Dim_Date[Date] )"	"#,##0"	Calendar quarter-to-date.
+21	3 Time Intelligence	Net Revenue YTD	"Net Revenue YTD =
+TOTALYTD ( [Net Revenue], Dim_Date[Date] )"	"#,##0"	Calendar year-to-date.
+22	3 Time Intelligence	Net Revenue Fiscal YTD	"Net Revenue Fiscal YTD =
+TOTALYTD ( [Net Revenue], Dim_Date[Date], ""3/31"" )"	"#,##0"	Fiscal year ends 31-Mar (Dim_Date.FiscalYear starts April).
+23	3 Time Intelligence	Net Revenue PM	"Net Revenue PM =
+CALCULATE ( [Net Revenue], DATEADD ( Dim_Date[Date], -1, MONTH ) )"	"#,##0"	Previous month.
+24	3 Time Intelligence	MoM %	"MoM % =
+VAR _prev = [Net Revenue PM]
+RETURN IF ( NOT ISBLANK ( _prev ), DIVIDE ( [Net Revenue] - _prev, _prev ) )"	+0.0%;-0.0%	Variables = readable + evaluated once.
+25	3 Time Intelligence	Net Revenue PY	"Net Revenue PY =
+CALCULATE ( [Net Revenue], SAMEPERIODLASTYEAR ( Dim_Date[Date] ) )"	"#,##0"	Blank for 2025 (single-year data) ? ready when 2026 arrives.
+26	3 Time Intelligence	YoY %	"YoY % =
+VAR _py = [Net Revenue PY]
+RETURN IF ( NOT ISBLANK ( _py ), DIVIDE ( [Net Revenue] - _py, _py ) )"	+0.0%;-0.0%	Year-over-year growth.
+27	3 Time Intelligence	Rolling 3M Net Revenue	"Rolling 3M Net Revenue =
+CALCULATE ( [Net Revenue], DATESINPERIOD ( Dim_Date[Date], MAX ( Dim_Date[Date] ), -3, MONTH ) )"	"#,##0"	Smooths seasonality.
+28	3 Time Intelligence	Running Total	"Running Total =
+CALCULATE ( [Net Revenue], FILTER ( ALL ( Dim_Date[Date] ), Dim_Date[Date] <= MAX ( Dim_Date[Date] ) ) )"	"#,##0"	Cumulative curve.
+29	3 Time Intelligence	Weekend Revenue Share %	"Weekend Revenue Share % =
+DIVIDE ( CALCULATE ( [Net Revenue], Dim_Date[IsWeekend] = 1 ), [Net Revenue] )"	0.0%	Shopping-pattern insight.
+30	3 Time Intelligence	Best Month	"Best Month =
+CONCATENATEX (
+    TOPN ( 1, ADDCOLUMNS ( VALUES ( Dim_Date[YearMonth] ), ""Rev"", [Net Revenue] ), [Rev], DESC ),
+    Dim_Date[YearMonth]
+)"	text	Text-returning measure for a dashboard callout.
+31	4 Ranking & Pareto	Product Rank	"Product Rank =
+IF ( HASONEVALUE ( Dim_Product[ProductID] ),
+    RANKX ( ALLSELECTED ( Dim_Product[ProductID] ), [Net Revenue], , DESC, DENSE ) )"	0	"Rank respects slicers (ALLSELECTED), keyed on ID because names repeat."
+32	4 Ranking & Pareto	% of Total	"% of Total =
+DIVIDE ( [Net Revenue], CALCULATE ( [Net Revenue], ALLSELECTED () ) )"	0.0%	Share within whatever the user has selected.
+33	4 Ranking & Pareto	Cumulative % (Pareto)	"Cumulative % (Pareto) =
+VAR _cur = [Net Revenue]
+VAR _t = ADDCOLUMNS ( ALLSELECTED ( Dim_Product[ProductID] ), ""Rev"", [Net Revenue] )
+RETURN DIVIDE ( SUMX ( FILTER ( _t, [Rev] >= _cur ), [Rev] ), SUMX ( _t, [Rev] ) )"	0.0%	Put products on rows sorted by Net Revenue desc.
+34	4 Ranking & Pareto	ABC Class	"ABC Class =
+SWITCH ( TRUE (), [Cumulative % (Pareto)] <= 0.8, ""A"", [Cumulative % (Pareto)] <= 0.95, ""B"", ""C"" )"	text	Inventory / focus segmentation.
+35	4 Ranking & Pareto	Top N Revenue	"Top N Revenue =
+IF ( [Product Rank] <= [TopN Value], [Net Revenue] )"	"#,##0"	Driven by the TopN parameter table (see 5).
+36	5 Dynamic & What-if	TopN (calculated table)	"TopN (calculated table) =
+TopN = GENERATESERIES ( 3, 20, 1 )   -- Modeling > New Table; add a slicer on TopN[TopN]"	0	Disconnected parameter table ? user picks Top 3?20.
+37	5 Dynamic & What-if	TopN Value	"TopN Value =
+SELECTEDVALUE ( TopN[TopN], 10 )"	0	Default 10.
+38	5 Dynamic & What-if	MetricSel (calculated table)	"MetricSel (calculated table) =
+MetricSel = DATATABLE ( ""Metric"", STRING, ""Order"", INTEGER,
+    { { ""Net Revenue"", 1 }, { ""Gross Sales"", 2 }, { ""Profit"", 3 }, { ""Orders"", 4 }, { ""Units"", 5 } } )"	text	Disconnected slicer table for a dynamic chart.
+39	5 Dynamic & What-if	Selected Metric	"Selected Metric =
+SWITCH ( SELECTEDVALUE ( MetricSel[Order], 1 ),
+    1, [Net Revenue], 2, [Gross Sales], 3, [Total Profit], 4, [Orders], 5, [Units Sold] )"	"#,##0"	"One chart, five metrics ? use as the chart value."
+40	5 Dynamic & What-if	Growth Target (calculated table)	"Growth Target (calculated table) =
+GrowthTarget = GENERATESERIES ( 0, 0.3, 0.01 )"	0%	What-if parameter (Modeling > New Parameter does this in one click).
+41	5 Dynamic & What-if	Revenue Target	"Revenue Target =
+[Net Revenue PM] * ( 1 + SELECTEDVALUE ( GrowthTarget[GrowthTarget], 0.05 ) )"	"#,##0"	Target = last month ? (1 + chosen growth).
+42	5 Dynamic & What-if	Target Variance %	"Target Variance % =
+DIVIDE ( [Net Revenue] - [Revenue Target], [Revenue Target] )"	+0.0%;-0.0%	Gap to target.
+43	5 Dynamic & What-if	KPI Status	"KPI Status =
+SWITCH ( TRUE (), ISBLANK ( [MoM %] ), ""?"", [MoM %] >= 0.05, ""??"", [MoM %] >= 0, ""??"", ""??"" )"	text	Traffic-light icon for a table/matrix.
+44	6 Customer Analytics	Active Customers	"Active Customers =
+DISTINCTCOUNT ( Sales_Fact[CustomerID] )"	"#,##0"	Customers who bought in the selected context.
+45	6 Customer Analytics	Revenue per Customer	"Revenue per Customer =
+DIVIDE ( [Net Revenue], [Active Customers] )"	"#,##0"	ARPU.
+46	6 Customer Analytics	Repeat Customers	"Repeat Customers =
+COUNTROWS ( FILTER ( VALUES ( Sales_Fact[CustomerID] ), CALCULATE ( COUNTROWS ( Sales_Fact ) ) > 1 ) )"	"#,##0"	Row context ? context transition inside FILTER.
+47	6 Customer Analytics	Repeat Rate %	"Repeat Rate % =
+DIVIDE ( [Repeat Customers], [Active Customers] )"	0.0%	Loyalty.
+48	6 Customer Analytics	Recency Days	"Recency Days =
+VAR _last = MAX ( Sales_Fact[OrderDate] )
+VAR _asof = CALCULATE ( MAX ( Sales_Fact[OrderDate] ), ALL ( Sales_Fact ) )
+RETURN DATEDIFF ( _last, _asof, DAY )"	0	R of RFM (as-of = last order date in data).
+49	6 Customer Analytics	RFM Segment	"RFM Segment =
+VAR _r = [Recency Days]  VAR _f = [Orders]
+RETURN SWITCH ( TRUE (),
+    _r <= 30 && _f >= 10, ""Champions"",
+    _r <= 60 && _f >= 6,  ""Loyal"",
+    _r > 120,             ""At Risk"",
+    ""Regular"" )"	text	Use with CustomerID on rows. Thresholds are illustrative ? tune to the percentile spread.
+50	6 Customer Analytics	New Customers	"New Customers =
+CALCULATE ( DISTINCTCOUNT ( Dim_Customer[CustomerID] ),
+    FILTER ( Dim_Customer, Dim_Customer[CustomerSince] >= MIN ( Dim_Date[Date] ) && Dim_Customer[CustomerSince] <= MAX ( Dim_Date[Date] ) ) )"	"#,##0"	Sign-ups in the selected period (see DQ caveat on CustomerSince).
+51	7 Operations & Stores	Avg Ship Days	"Avg Ship Days =
+AVERAGE ( Sales_Fact[ShipDays] )"	0.0	Fulfilment speed.
+52	7 Operations & Stores	Express Share %	"Express Share % =
+DIVIDE ( CALCULATE ( [Orders], Sales_Fact[ShipMode] = ""Express"" ), [Orders] )"	0.0%	Mix.
+53	7 Operations & Stores	Slow Orders % (ò5 days)	"Slow Orders % (ò5 days) =
+DIVIDE ( CALCULATE ( [Orders], Sales_Fact[ShipDays] >= 5 ), [Orders] )"	0.0%	SLA proxy.
+54	7 Operations & Stores	Active Stores	"Active Stores =
+DISTINCTCOUNT ( Sales_Fact[StoreID] )"	"#,##0"	Stores with sales in context.
+55	7 Operations & Stores	Revenue per Store	"Revenue per Store =
+DIVIDE ( [Net Revenue], [Active Stores] )"	"#,##0"	Productivity; slice by StoreType (Owned vs Franchise).
+56	7 Operations & Stores	Margin vs Overall (pp)	"Margin vs Overall (pp) =
+[Profit Margin %] - CALCULATE ( [Profit Margin %], ALL ( Sales_Fact ) )"	+0.0%;-0.0%	Highlights over/under-performers vs company margin (ALL removes every filter).
